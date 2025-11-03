@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Railway Traffic Control System - Dashboard</title>
+    <link rel="stylesheet" href="styles/dashboard.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <h1>🚂 Railway Traffic Control System</h1>
+                <p>AI-Powered Decision Support</p>
+            </div>
+            <div class="header-status">
+                <span class="status-indicator" id="systemStatus">●</span>
+                <span id="statusText">System Online</span>
+            </div>
+        </header>
+
+        <!-- Main Dashboard -->
+        <div class="dashboard">
+            <!-- KPI Panel -->
+            <section class="kpi-section">
+                <h2>Key Performance Indicators</h2>
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <h3>Throughput</h3>
+                        <div class="kpi-value" id="throughputValue">--</div>
+                        <div class="kpi-label">trains/hour</div>
+                        <div class="kpi-progress">
+                            <div class="progress-bar" id="throughputProgress"></div>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card">
+                        <h3>Punctuality</h3>
+                        <div class="kpi-value" id="punctualityValue">--</div>
+                        <div class="kpi-label">% on-time</div>
+                        <div class="kpi-progress">
+                            <div class="progress-bar" id="punctualityProgress"></div>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card">
+                        <h3>Avg Delay</h3>
+                        <div class="kpi-value" id="avgDelayValue">--</div>
+                        <div class="kpi-label">minutes</div>
+                        <div class="kpi-trend" id="delayTrend">↓ Improving</div>
+                    </div>
+
+                    <div class="kpi-card">
+                        <h3>Active Conflicts</h3>
+                        <div class="kpi-value" id="conflictsValue">--</div>
+                        <div class="kpi-label">detected</div>
+                        <div class="kpi-alert" id="conflictAlert"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Real-time Analysis -->
+            <section class="analysis-section">
+                <div class="section-split">
+                    <!-- Conflict Detection -->
+                    <div class="analysis-panel">
+                        <h2>Conflict Detection</h2>
+                        <form id="conflictForm">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label>Trains in Section</label>
+                                    <input type="number" id="trainsInSection" value="30" min="0" max="50">
+                                </div>
+                                <div class="form-group">
+                                    <label>Available Platforms</label>
+                                    <input type="number" id="availablePlatforms" value="3" min="1" max="10">
+                                </div>
+                                <div class="form-group">
+                                    <label>Platform Utilization (%)</label>
+                                    <input type="number" id="platformUtil" value="90" min="0" max="100" step="0.1">
+                                </div>
+                                <div class="form-group">
+                                    <label>Weather Severity</label>
+                                    <input type="number" id="weatherSeverity" value="0.2" min="0" max="1" step="0.01">
+                                </div>
+                                <div class="form-group">
+                                    <label>Rainfall (mm)</label>
+                                    <input type="number" id="rainfall" value="0" min="0" max="50" step="0.1">
+                                </div>
+                                <div class="form-group">
+                                    <label>Fog Intensity</label>
+                                    <input type="number" id="fogIntensity" value="0" min="0" max="1" step="0.01">
+                                </div>
+                                <div class="form-group">
+                                    <label>Temperature (°C)</label>
+                                    <input type="number" id="temperature" value="25" min="-10" max="50">
+                                </div>
+                                <div class="form-group">
+                                    <label>Peak Hour</label>
+                                    <select id="isPeakHour">
+                                        <option value="0">No</option>
+                                        <option value="1">Yes</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Analyze Conflict Risk</button>
+                        </form>
+
+                        <div id="conflictResult" class="result-box hidden">
+                            <div class="result-header">
+                                <h3>Conflict Analysis</h3>
+                                <span class="risk-badge" id="riskBadge">--</span>
+                            </div>
+                            <div class="result-content">
+                                <p><strong>Probability:</strong> <span id="conflictProb">--</span></p>
+                                <div id="recommendations"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Delay Prediction -->
+                    <div class="analysis-panel">
+                        <h2>Delay Prediction</h2>
+                        <button class="btn btn-secondary" id="predictDelayBtn">Predict Delay (Same Inputs)</button>
+
+                        <div id="delayResult" class="result-box hidden">
+                            <div class="result-header">
+                                <h3>Delay Forecast</h3>
+                                <span class="severity-badge" id="severityBadge">--</span>
+                            </div>
+                            <div class="result-content">
+                                <p><strong>Predicted Delay:</strong> <span id="predictedDelay">--</span> minutes</p>
+                                <p><strong>Impact:</strong> <span id="delayImpact">--</span></p>
+                                <div id="mitigationStrategies"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- What-If Simulation -->
+            <section class="simulation-section">
+                <h2>What-If Scenario Simulation</h2>
+                <div class="simulation-controls">
+                    <div class="form-group">
+                        <label>Modify Trains in Section:</label>
+                        <input type="number" id="simTrains" placeholder="e.g., 25">
+                    </div>
+                    <div class="form-group">
+                        <label>Modify Available Platforms:</label>
+                        <input type="number" id="simPlatforms" placeholder="e.g., 4">
+                    </div>
+                    <button class="btn btn-primary" id="runSimulation">Run Simulation</button>
+                </div>
+
+                <div id="simulationResult" class="result-box hidden">
+                    <h3>Simulation Results</h3>
+                    <div class="comparison-grid">
+                        <div class="comparison-item">
+                            <h4>Baseline</h4>
+                            <p id="baselineDelay">--</p>
+                        </div>
+                        <div class="comparison-arrow">→</div>
+                        <div class="comparison-item">
+                            <h4>Modified</h4>
+                            <p id="modifiedDelay">--</p>
+                        </div>
+                        <div class="comparison-result">
+                            <h4>Improvement</h4>
+                            <p id="improvement">--</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Visualization Section -->
+            <section class="viz-section">
+                <h2>Real-time Monitoring</h2>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <canvas id="throughputChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="delayTrendChart"></canvas>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Railway Traffic Control System v1.0 | AI-Powered Optimization</p>
+            <p id="lastUpdate">Last updated: --</p>
+        </footer>
+    </div>
+
+    <script src="components/kpi_panel.js"></script>
+    <script src="components/simulation.js"></script>
+</body>
+</html>

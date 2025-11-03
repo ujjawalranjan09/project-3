@@ -1,0 +1,74 @@
+# AI-Powered Railway Traffic Control System Configuration
+
+system:
+  name: "Railway Traffic Control System"
+  version: "1.0.0"
+  environment: "production"
+
+api:
+  host: "0.0.0.0"
+  port: 5000
+  debug: false
+  cors_enabled: true
+
+models:
+  conflict_detector:
+    path: "backend/models/conflict_detector.pkl"
+    threshold:
+      low_risk: 0.3
+      high_risk: 0.7
+
+  delay_predictor:
+    path: "backend/models/delay_predictor.pkl"
+    thresholds:
+      minimal: 5
+      moderate: 15
+      significant: 30
+
+optimization:
+  default_section_capacity: 25
+  default_platforms: 3
+  time_horizon_minutes: 60
+
+  priorities:
+    express: 10
+    passenger: 8
+    freight: 6
+    maintenance: 4
+
+thresholds:
+  trains_in_section:
+    warning: 25
+    critical: 35
+
+  platform_utilization:
+    optimal_min: 85
+    optimal_max: 95
+    critical: 98
+
+  weather_severity:
+    moderate: 0.3
+    severe: 0.5
+
+alerts:
+  email_enabled: false
+  sms_enabled: false
+  dashboard_notifications: true
+
+logging:
+  level: "INFO"
+  file: "logs/railway_system.log"
+  max_size_mb: 100
+  backup_count: 5
+
+database:
+  enabled: false
+  type: "postgresql"
+  host: "localhost"
+  port: 5432
+  name: "railway_db"
+
+performance:
+  cache_enabled: true
+  cache_ttl_seconds: 60
+  max_concurrent_requests: 100

@@ -1,0 +1,150 @@
+{
+  "training_date": "2025-11-03T01:20:08.692361",
+  "dataset_size": 500000,
+  "metrics": {
+    "conflict_detection": {
+      "model": "RandomForest",
+      "f1_score": 0.9854172265854411,
+      "accuracy": 0.98535
+    },
+    "delay_prediction": {
+      "model": "LightGBM",
+      "mae": 2.5154738835599475,
+      "r2_score": 0.9552125016452399
+    }
+  },
+  "feature_importance": {
+    "conflict": [
+      {
+        "feature": "weather_impact",
+        "importance": 0.2431813365062687
+      },
+      {
+        "feature": "congestion_score",
+        "importance": 0.19945977656862127
+      },
+      {
+        "feature": "trains_in_section",
+        "importance": 0.17774777698024985
+      },
+      {
+        "feature": "train_density_risk",
+        "importance": 0.11295943319952156
+      },
+      {
+        "feature": "weather_severity",
+        "importance": 0.11137784112941393
+      },
+      {
+        "feature": "fog_intensity",
+        "importance": 0.07051976650608352
+      },
+      {
+        "feature": "available_platforms",
+        "importance": 0.024293806519033456
+      },
+      {
+        "feature": "is_peak_hour",
+        "importance": 0.016029680135939566
+      },
+      {
+        "feature": "rainfall_mm",
+        "importance": 0.014328324343122796
+      },
+      {
+        "feature": "platform_utilization",
+        "importance": 0.010739029810359109
+      },
+      {
+        "feature": "temperature_c",
+        "importance": 0.007961256120989023
+      },
+      {
+        "feature": "hour_sin",
+        "importance": 0.0034653326982119438
+      },
+      {
+        "feature": "hour",
+        "importance": 0.0034025418037470904
+      },
+      {
+        "feature": "hour_cos",
+        "importance": 0.0025707737457015376
+      },
+      {
+        "feature": "month",
+        "importance": 0.0011315699724136223
+      },
+      {
+        "feature": "day_of_week",
+        "importance": 0.0008317539603228775
+      }
+    ],
+    "delay": [
+      {
+        "feature": "trains_in_section",
+        "importance": 914
+      },
+      {
+        "feature": "weather_impact",
+        "importance": 745
+      },
+      {
+        "feature": "weather_severity",
+        "importance": 729
+      },
+      {
+        "feature": "rainfall_mm",
+        "importance": 600
+      },
+      {
+        "feature": "fog_intensity",
+        "importance": 554
+      },
+      {
+        "feature": "temperature_c",
+        "importance": 467
+      },
+      {
+        "feature": "is_peak_hour",
+        "importance": 413
+      },
+      {
+        "feature": "train_density_risk",
+        "importance": 401
+      },
+      {
+        "feature": "available_platforms",
+        "importance": 211
+      },
+      {
+        "feature": "month",
+        "importance": 181
+      },
+      {
+        "feature": "hour",
+        "importance": 168
+      },
+      {
+        "feature": "platform_utilization",
+        "importance": 157
+      },
+      {
+        "feature": "day_of_week",
+        "importance": 143
+      },
+      {
+        "feature": "hour_sin",
+        "importance": 129
+      },
+      {
+        "feature": "hour_cos",
+        "importance": 108
+      },
+      {
+        "feature": "congestion_score",
+        "importance": 80
+      }
+    ]
+  }
+}
