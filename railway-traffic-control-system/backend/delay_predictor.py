@@ -18,7 +18,7 @@ class DelayPredictor:
     def __init__(self, model_path='backend/models/delay_predictor.pkl'):
         self.model = joblib.load(model_path)
         self.feature_columns = [
-            'trains_in_section', 'available_platforms', 'platform_utilization_pct',
+            'trains_in_section', 'available_platforms', 'platform_utilization',
             'weather_severity', 'rainfall_mm', 'fog_intensity', 'temperature_c',
             'hour', 'is_peak_hour', 'day_of_week', 'month',
             'hour_sin', 'hour_cos', 'train_density_risk', 
@@ -41,7 +41,7 @@ class DelayPredictor:
         # Composite features
         input_data['train_density_risk'] = input_data['trains_in_section'] / (input_data['available_platforms'] + 1)
         input_data['weather_impact'] = input_data['weather_severity'] * input_data['trains_in_section']
-        input_data['congestion_score'] = input_data['platform_utilization_pct'] * input_data['trains_in_section'] / 100
+        input_data['congestion_score'] = input_data['platform_utilization'] * input_data['trains_in_section'] / 100
 
         return input_data
 
@@ -121,7 +121,7 @@ class DelayPredictor:
             })
 
         # Platform optimization
-        if data['platform_utilization_pct'] > 90:
+        if data['platform_utilization'] > 90:
             strategies.append({
                 'strategy': 'Dynamic platform reallocation',
                 'expected_reduction': '4-8 minutes',
@@ -179,7 +179,7 @@ if __name__ == "__main__":
         'timestamp': '2025-11-02 21:00:00',
         'trains_in_section': 35,
         'available_platforms': 3,
-        'platform_utilization_pct': 95.0,
+        'platform_utilization': 95.0,
         'weather_severity': 0.38,
         'rainfall_mm': 3.5,
         'fog_intensity': 0.6,
