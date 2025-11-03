@@ -31,7 +31,7 @@ def test_conflict_detection():
     data = {
         "trains_in_section": 35,
         "available_platforms": 3,
-        "platform_utilization_pct": 95.0,
+        "platform_utilization": 95.0,
         "weather_severity": 0.4,
         "rainfall_mm": 3.5,
         "fog_intensity": 0.6,
@@ -55,7 +55,7 @@ def test_delay_prediction():
     data = {
         "trains_in_section": 35,
         "available_platforms": 3,
-        "platform_utilization_pct": 95.0,
+        "platform_utilization": 95.0,
         "weather_severity": 0.4,
         "rainfall_mm": 3.5,
         "fog_intensity": 0.6,
@@ -80,7 +80,7 @@ def test_simulation():
         "baseline": {
             "trains_in_section": 35,
             "available_platforms": 3,
-            "platform_utilization_pct": 95.0,
+            "platform_utilization": 95.0,
             "weather_severity": 0.4,
             "rainfall_mm": 3.5,
             "fog_intensity": 0.6,
