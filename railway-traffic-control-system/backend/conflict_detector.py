@@ -18,7 +18,7 @@ class ConflictDetector:
     def __init__(self, model_path='backend/models/conflict_detector.pkl'):
         self.model = joblib.load(model_path)
         self.feature_columns = [
-            'trains_in_section', 'available_platforms', 'platform_utilization_pct',
+            'trains_in_section', 'available_platforms', 'platform_utilization',
             'weather_severity', 'rainfall_mm', 'fog_intensity', 'temperature_c',
             'hour', 'is_peak_hour', 'day_of_week', 'month',
             'hour_sin', 'hour_cos', 'train_density_risk', 
@@ -41,7 +41,7 @@ class ConflictDetector:
         # Composite features
         input_data['train_density_risk'] = input_data['trains_in_section'] / (input_data['available_platforms'] + 1)
         input_data['weather_impact'] = input_data['weather_severity'] * input_data['trains_in_section']
-        input_data['congestion_score'] = input_data['platform_utilization_pct'] * input_data['trains_in_section'] / 100
+        input_data['congestion_score'] = input_data['platform_utilization'] * input_data['trains_in_section'] / 100
 
         return input_data
 
@@ -119,11 +119,11 @@ class ConflictDetector:
             })
 
         # High platform utilization
-        if data['platform_utilization_pct'] > 95:
+        if data['platform_utilization'] > 95:
             recommendations.append({
                 'priority': 'HIGH',
                 'action': 'Optimize platform allocation',
-                'details': f"Utilization: {data['platform_utilization_pct']:.1f}% (Threshold: 95%)"
+                'details': f"Utilization: {data['platform_utilization']:.1f}% (Threshold: 95%)"
             })
 
         # General conflict risk
@@ -153,7 +153,7 @@ if __name__ == "__main__":
         'timestamp': '2025-11-02 21:00:00',
         'trains_in_section': 38,
         'available_platforms': 2,
-        'platform_utilization_pct': 98.5,
+        'platform_utilization': 98.5,
         'weather_severity': 0.45,
         'rainfall_mm': 4.2,
         'fog_intensity': 0.7,
