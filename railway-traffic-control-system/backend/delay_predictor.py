@@ -3,100 +3,104 @@ Delay Prediction Module
 Predicts expected delay duration for railway operations
 """
 
+import logging
 import joblib
 import pandas as pd
 import numpy as np
 from datetime import datetime
 import json
 
+logger = logging.getLogger(__name__)
+
 
 class DelayPredictor:
     """
-    Real-time delay prediction using trained ML model
+    Real-time delay prediction using trained ML model.
     """
 
-    def __init__(self, model_path='backend/models/delay_predictor.pkl'):
+    FEATURE_COLUMNS = [
+        'trains_in_section', 'available_platforms', 'platform_utilization',
+        'weather_severity', 'rainfall_mm', 'fog_intensity', 'temperature_c',
+        'hour', 'is_peak_hour', 'day_of_week', 'month',
+        'hour_sin', 'hour_cos', 'train_density_risk',
+        'weather_impact', 'congestion_score'
+    ]
+
+    def __init__(self, model_path: str = 'backend/models/delay_predictor.pkl'):
         self.model = joblib.load(model_path)
-        self.feature_columns = [
-            'trains_in_section', 'available_platforms', 'platform_utilization',
-            'weather_severity', 'rainfall_mm', 'fog_intensity', 'temperature_c',
-            'hour', 'is_peak_hour', 'day_of_week', 'month',
-            'hour_sin', 'hour_cos', 'train_density_risk', 
-            'weather_impact', 'congestion_score'
-        ]
+        logger.info("DelayPredictor loaded model from %s", model_path)
 
-    def engineer_features(self, input_data):
-        """Apply feature engineering to input data"""
-        # Time-based features
-        if 'timestamp' in input_data:
-            timestamp = pd.to_datetime(input_data['timestamp'])
-            input_data['day_of_week'] = timestamp.dayofweek
-            input_data['month'] = timestamp.month
-            input_data['hour'] = timestamp.hour
+    def engineer_features(self, input_data: dict) -> dict:
+        """Apply feature engineering — returns a new dict, does not mutate input."""
+        data = input_data.copy()
 
-        # Trigonometric encoding for hour
-        input_data['hour_sin'] = np.sin(2 * np.pi * input_data['hour'] / 24)
-        input_data['hour_cos'] = np.cos(2 * np.pi * input_data['hour'] / 24)
+        if 'timestamp' in data:
+            ts = pd.to_datetime(data['timestamp'])
+            data['day_of_week'] = ts.dayofweek
+            data['month'] = ts.month
+            data['hour'] = ts.hour
+        else:
+            now = datetime.utcnow()
+            data.setdefault('day_of_week', now.weekday())
+            data.setdefault('month', now.month)
+            data.setdefault('hour', now.hour)
 
-        # Composite features
-        input_data['train_density_risk'] = input_data['trains_in_section'] / (input_data['available_platforms'] + 1)
-        input_data['weather_impact'] = input_data['weather_severity'] * input_data['trains_in_section']
-        input_data['congestion_score'] = input_data['platform_utilization'] * input_data['trains_in_section'] / 100
+        h = data['hour']
+        data['hour_sin'] = np.sin(2 * np.pi * h / 24)
+        data['hour_cos'] = np.cos(2 * np.pi * h / 24)
 
-        return input_data
+        data['train_density_risk'] = data['trains_in_section'] / (data['available_platforms'] + 1)
+        data['weather_impact'] = data['weather_severity'] * data['trains_in_section']
+        data['congestion_score'] = data['platform_utilization'] * data['trains_in_section'] / 100
 
-    def predict(self, input_data):
+        return data
+
+    def predict(self, input_data: dict) -> dict:
         """
-        Predict expected delay for given operational state
+        Predict expected delay for given operational state.
 
         Args:
-            input_data: dict with operational parameters
+            input_data: dict with operational parameters.
 
         Returns:
-            dict with prediction results
+            dict with prediction results, severity, and mitigation strategies.
         """
-        # Engineer features
-        processed_data = self.engineer_features(input_data.copy())
+        processed = self.engineer_features(input_data)
 
-        # Prepare feature vector
-        feature_vector = pd.DataFrame([processed_data])[self.feature_columns]
+        feature_vector = pd.DataFrame([processed])[self.FEATURE_COLUMNS]
 
-        # Predict delay
-        predicted_delay = self.model.predict(feature_vector)[0]
-        predicted_delay = max(0, predicted_delay)  # Ensure non-negative
+        predicted_delay = float(self.model.predict(feature_vector)[0])
+        predicted_delay = max(0.0, predicted_delay)  # clamp to non-negative
 
-        # Categorize delay severity
         if predicted_delay < 5:
-            severity = "MINIMAL"
-            impact = "No significant impact expected"
+            severity, impact = 'MINIMAL', 'No significant impact expected'
         elif predicted_delay < 15:
-            severity = "MODERATE"
-            impact = "Minor schedule adjustments needed"
+            severity, impact = 'MODERATE', 'Minor schedule adjustments needed'
         elif predicted_delay < 30:
-            severity = "SIGNIFICANT"
-            impact = "Major schedule disruption expected"
+            severity, impact = 'SIGNIFICANT', 'Major schedule disruption expected'
         else:
-            severity = "CRITICAL"
-            impact = "Severe delays - immediate action required"
+            severity, impact = 'CRITICAL', 'Severe delays — immediate action required'
 
-        # Generate mitigation strategies
-        mitigation = self._generate_mitigation(processed_data, predicted_delay)
+        mitigation = self._generate_mitigation(processed, predicted_delay)
+
+        logger.debug("Delay prediction: %.1f min severity=%s", predicted_delay, severity)
 
         return {
-            'predicted_delay_minutes': float(predicted_delay),
+            'predicted_delay_minutes': round(predicted_delay, 2),
             'severity': severity,
             'impact_description': impact,
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
             'mitigation_strategies': mitigation,
-            'operational_state': {k: float(v) if isinstance(v, (int, float, np.number)) else v 
-                                 for k, v in processed_data.items()}
+            'operational_state': {
+                k: (float(v) if isinstance(v, (int, float, np.number)) else v)
+                for k, v in processed.items()
+            }
         }
 
-    def _generate_mitigation(self, data, delay):
-        """Generate mitigation strategies based on predicted delay"""
+    def _generate_mitigation(self, data: dict, delay: float) -> list:
+        """Generate mitigation strategies based on predicted delay."""
         strategies = []
 
-        # For significant delays
         if delay > 15:
             strategies.append({
                 'strategy': 'Activate priority routing',
@@ -104,7 +108,6 @@ class DelayPredictor:
                 'implementation': 'Prioritize express trains, hold local services'
             })
 
-        # High train density
         if data['trains_in_section'] > 30:
             strategies.append({
                 'strategy': 'Implement section throttling',
@@ -112,7 +115,6 @@ class DelayPredictor:
                 'implementation': f"Reduce entries to {int(data['trains_in_section'] * 0.7)} trains"
             })
 
-        # Weather-related delays
         if data['weather_severity'] > 0.3:
             strategies.append({
                 'strategy': 'Speed restrictions and safety protocols',
@@ -120,7 +122,6 @@ class DelayPredictor:
                 'implementation': 'Enforce 80% speed limit, increase signal spacing'
             })
 
-        # Platform optimization
         if data['platform_utilization'] > 90:
             strategies.append({
                 'strategy': 'Dynamic platform reallocation',
@@ -128,7 +129,6 @@ class DelayPredictor:
                 'implementation': 'Reassign platforms based on train type and priority'
             })
 
-        # Critical delays
         if delay > 30:
             strategies.append({
                 'strategy': 'Emergency rerouting protocol',
@@ -138,43 +138,40 @@ class DelayPredictor:
 
         return strategies
 
-    def simulate_scenario(self, base_data, modifications):
+    def simulate_scenario(self, base_data: dict, modifications: dict) -> dict:
         """
-        Simulate what-if scenarios by modifying operational parameters
+        Simulate what-if scenarios by modifying operational parameters.
 
         Args:
-            base_data: baseline operational state
-            modifications: dict of parameter changes to test
+            base_data: baseline operational state dict.
+            modifications: parameter overrides to test.
 
         Returns:
-            comparison of scenarios
+            Comparison dict with baseline, modified scenario, and improvement metrics.
         """
-        # Baseline prediction
         baseline_result = self.predict(base_data)
 
-        # Modified scenario
-        modified_data = base_data.copy()
-        modified_data.update(modifications)
+        modified_data = {**base_data, **modifications}
         modified_result = self.predict(modified_data)
 
-        # Calculate improvement
-        delay_reduction = baseline_result['predicted_delay_minutes'] - modified_result['predicted_delay_minutes']
-        improvement_pct = (delay_reduction / baseline_result['predicted_delay_minutes'] * 100) if baseline_result['predicted_delay_minutes'] > 0 else 0
+        base_delay = baseline_result['predicted_delay_minutes']
+        mod_delay = modified_result['predicted_delay_minutes']
+        delay_reduction = base_delay - mod_delay
+        improvement_pct = (delay_reduction / base_delay * 100) if base_delay > 0 else 0.0
 
         return {
             'baseline': baseline_result,
             'modified_scenario': modified_result,
             'modifications_applied': modifications,
-            'delay_reduction_minutes': float(delay_reduction),
-            'improvement_percentage': float(improvement_pct)
+            'delay_reduction_minutes': round(delay_reduction, 2),
+            'improvement_percentage': round(improvement_pct, 2)
         }
 
 
-if __name__ == "__main__":
-    # Example usage
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
     predictor = DelayPredictor()
 
-    # Test scenario
     scenario = {
         'timestamp': '2025-11-02 21:00:00',
         'trains_in_section': 35,
@@ -188,14 +185,7 @@ if __name__ == "__main__":
     }
 
     result = predictor.predict(scenario)
-    print("Delay Prediction:")
     print(json.dumps(result, indent=2))
 
-    # What-if simulation
-    print("\n\nWhat-If Simulation: Reduce train density")
-    simulation = predictor.simulate_scenario(
-        scenario,
-        {'trains_in_section': 25, 'available_platforms': 4}
-    )
-    print(f"Delay reduction: {simulation['delay_reduction_minutes']:.2f} minutes")
-    print(f"Improvement: {simulation['improvement_percentage']:.1f}%")
+    sim = predictor.simulate_scenario(scenario, {'trains_in_section': 25, 'available_platforms': 4})
+    print(f"Delay reduction: {sim['delay_reduction_minutes']:.2f} min ({sim['improvement_percentage']:.1f}%)")

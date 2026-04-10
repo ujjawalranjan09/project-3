@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# ML Models (use DVC or Git LFS instead)
+backend/models/*.pkl
+backend/models/*.joblib
+
+# Datasets (large files)
+*.csv
+*.parquet
+*.h5
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Docker
+.docker/
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage

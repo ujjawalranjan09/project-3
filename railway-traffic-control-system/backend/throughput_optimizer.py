@@ -3,223 +3,229 @@ MILP-based Throughput Optimization Module
 Maximizes section throughput using Mixed Integer Linear Programming
 """
 
-from pulp import *
-import pandas as pd
+import logging
+from pulp import LpProblem, LpMaximize, LpVariable, LpStatus, lpSum, value, PULP_CBC_CMD
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
+
+logger = logging.getLogger(__name__)
+
+MAX_DECISION_VARS = 3000  # Guard against combinatorial explosion
 
 
 class ThroughputOptimizer:
     """
-    MILP optimizer for railway section throughput maximization
+    MILP optimizer for railway section throughput maximization.
     """
 
     def __init__(self):
         self.problem = None
-        self.solution = None
 
-    def optimize_train_schedule(self, trains, platforms, section_capacity, time_horizon=60):
+    def optimize_train_schedule(
+        self,
+        trains: list,
+        platforms: int,
+        section_capacity: int,
+        time_horizon: int = 60
+    ) -> dict:
         """
-        Optimize train scheduling to maximize throughput
+        Optimize train scheduling to maximize throughput.
 
         Args:
-            trains: list of train dicts with properties (id, priority, arrival_time, duration)
-            platforms: number of available platforms
-            section_capacity: maximum trains in section simultaneously
-            time_horizon: optimization window in minutes
+            trains: list of dicts with keys id, priority, arrival_time, duration.
+            platforms: number of available platforms.
+            section_capacity: maximum simultaneous trains in section.
+            time_horizon: optimization window in minutes.
 
         Returns:
-            optimized schedule
-        """
-        # Create optimization problem
-        self.problem = LpProblem("Railway_Throughput_Optimization", LpMaximize)
+            Optimized schedule dict.
 
+        Raises:
+            ValueError: if problem size exceeds MAX_DECISION_VARS.
+        """
         num_trains = len(trains)
+        if num_trains * time_horizon > MAX_DECISION_VARS:
+            raise ValueError(
+                f"Problem too large ({num_trains} trains × {time_horizon} min = "
+                f"{num_trains*time_horizon} vars > {MAX_DECISION_VARS}). "
+                f"Reduce train count or time_horizon."
+            )
+
         time_slots = list(range(time_horizon))
 
-        # Decision variables: x[i][t] = 1 if train i is scheduled at time t
-        x = {}
-        for i in range(num_trains):
-            for t in time_slots:
-                x[i, t] = LpVariable(f"train_{i}_time_{t}", cat='Binary')
+        prob = LpProblem('Railway_Throughput_Optimization', LpMaximize)
 
-        # Platform assignment: p[i][k] = 1 if train i uses platform k
-        p = {}
-        for i in range(num_trains):
-            for k in range(platforms):
-                p[i, k] = LpVariable(f"train_{i}_platform_{k}", cat='Binary')
+        # Decision variables
+        x = {(i, t): LpVariable(f'x_{i}_{t}', cat='Binary')
+             for i in range(num_trains) for t in time_slots}
+        p = {(i, k): LpVariable(f'p_{i}_{k}', cat='Binary')
+             for i in range(num_trains) for k in range(platforms)}
 
-        # Objective: Maximize total trains scheduled weighted by priority
-        self.problem += lpSum([
-            trains[i]['priority'] * lpSum([x[i, t] for t in time_slots])
+        # Objective: maximise priority-weighted throughput
+        prob += lpSum(
+            trains[i]['priority'] * x[i, t]
             for i in range(num_trains)
-        ]), "Total_Weighted_Throughput"
+            for t in time_slots
+        ), 'Total_Weighted_Throughput'
 
-        # Constraints
-
-        # 1. Each train scheduled at most once
+        # Constraint 1: each train scheduled at most once
         for i in range(num_trains):
-            self.problem += lpSum([x[i, t] for t in time_slots]) <= 1, f"Train_{i}_once"
+            prob += lpSum(x[i, t] for t in time_slots) <= 1, f'once_{i}'
 
-        # 2. Each train uses exactly one platform if scheduled
+        # Constraint 2: platform assignment iff scheduled
         for i in range(num_trains):
-            self.problem += lpSum([p[i, k] for k in range(platforms)]) == lpSum([x[i, t] for t in time_slots]), f"Train_{i}_platform"
+            prob += (
+                lpSum(p[i, k] for k in range(platforms))
+                == lpSum(x[i, t] for t in time_slots)
+            ), f'platform_assign_{i}'
 
-        # 3. Platform capacity: at most one train per platform at any time
+        # Pre-compute occupancy windows to avoid triple nested loop inside solver
+        # occupancy[i][t] = list of start slots at which train i occupies slot t
+        occupancy = {}
+        for i in range(num_trains):
+            dur = trains[i]['duration']
+            occupancy[i] = {}
+            for t in time_slots:
+                starts = [s for s in range(max(0, t - dur + 1), t + 1) if s in set(time_slots)]
+                occupancy[i][t] = starts
+
+        # Constraint 3: one train per platform per slot
         for k in range(platforms):
             for t in time_slots:
-                occupying_trains = []
-                for i in range(num_trains):
-                    duration = trains[i]['duration']
-                    for start in range(max(0, t - duration + 1), t + 1):
-                        if start in time_slots:
-                            occupying_trains.append(x[i, start] * p[i, k])
+                terms = [
+                    x[i, s] * p[i, k]   # NOTE: bilinear — valid for MILP via CBC
+                    for i in range(num_trains)
+                    for s in occupancy[i][t]
+                ]
+                if terms:
+                    prob += lpSum(terms) <= 1, f'plat_{k}_{t}'
 
-                if occupying_trains:
-                    self.problem += lpSum(occupying_trains) <= 1, f"Platform_{k}_time_{t}"
-
-        # 4. Section capacity constraint
+        # Constraint 4: section capacity
         for t in time_slots:
-            trains_in_section = []
-            for i in range(num_trains):
-                duration = trains[i]['duration']
-                for start in range(max(0, t - duration + 1), t + 1):
-                    if start in time_slots:
-                        trains_in_section.append(x[i, start])
+            terms = [
+                x[i, s]
+                for i in range(num_trains)
+                for s in occupancy[i][t]
+            ]
+            if terms:
+                prob += lpSum(terms) <= section_capacity, f'cap_{t}'
 
-            if trains_in_section:
-                self.problem += lpSum(trains_in_section) <= section_capacity, f"Section_capacity_{t}"
-
-        # 5. Respect earliest arrival times
+        # Constraint 5: respect earliest arrival times
         for i in range(num_trains):
             earliest = trains[i]['arrival_time']
-            for t in range(earliest):
-                if t in time_slots:
-                    self.problem += x[i, t] == 0, f"Train_{i}_arrival_{t}"
-
-        # Solve
-        solver = PULP_CBC_CMD(msg=0)
-        self.problem.solve(solver)
-
-        # Extract solution
-        schedule = self._extract_solution(x, p, trains, time_slots, platforms)
-
-        return schedule
-
-    def _extract_solution(self, x, p, trains, time_slots, platforms):
-        """Extract and format optimization solution"""
-        schedule = {
-            'status': LpStatus[self.problem.status],
-            'objective_value': value(self.problem.objective),
-            'scheduled_trains': [],
-            'unscheduled_trains': [],
-            'platform_utilization': {},
-            'throughput_metrics': {}
-        }
-
-        # Extract scheduled trains
-        for i in range(len(trains)):
-            scheduled = False
             for t in time_slots:
-                if value(x[i, t]) == 1:
-                    # Find assigned platform
-                    assigned_platform = None
-                    for k in range(platforms):
-                        if value(p[i, k]) == 1:
-                            assigned_platform = k
-                            break
+                if t < earliest:
+                    prob += x[i, t] == 0, f'arrival_{i}_{t}'
 
-                    schedule['scheduled_trains'].append({
-                        'train_id': trains[i]['id'],
-                        'priority': trains[i]['priority'],
+        solver = PULP_CBC_CMD(msg=0)
+        prob.solve(solver)
+        self.problem = prob
+
+        logger.info(
+            "MILP solved: status=%s objective=%.2f",
+            LpStatus[prob.status], value(prob.objective) or 0
+        )
+
+        return self._extract_solution(x, p, trains, time_slots, platforms)
+
+    def _extract_solution(
+        self, x: dict, p: dict, trains: list, time_slots: list, platforms: int
+    ) -> dict:
+        """Extract and format the LP solution."""
+        scheduled, unscheduled = [], []
+
+        for i, train in enumerate(trains):
+            placed = False
+            for t in time_slots:
+                if value(x[i, t]) and round(value(x[i, t])) == 1:
+                    platform = next(
+                        (k for k in range(platforms) if value(p[i, k]) and round(value(p[i, k])) == 1),
+                        None
+                    )
+                    scheduled.append({
+                        'train_id': train['id'],
+                        'priority': train['priority'],
                         'scheduled_time': t,
-                        'duration': trains[i]['duration'],
-                        'platform': assigned_platform,
-                        'original_arrival': trains[i]['arrival_time']
+                        'duration': train['duration'],
+                        'platform': platform,
+                        'original_arrival': train['arrival_time']
                     })
-                    scheduled = True
+                    placed = True
                     break
-
-            if not scheduled:
-                schedule['unscheduled_trains'].append({
-                    'train_id': trains[i]['id'],
-                    'priority': trains[i]['priority'],
+            if not placed:
+                unscheduled.append({
+                    'train_id': train['id'],
+                    'priority': train['priority'],
                     'reason': 'Insufficient capacity or platform availability'
                 })
 
-        # Calculate metrics
-        schedule['throughput_metrics'] = {
-            'total_trains_scheduled': len(schedule['scheduled_trains']),
-            'total_trains': len(trains),
-            'throughput_rate': len(schedule['scheduled_trains']) / len(trains) * 100,
-            'average_priority_served': np.mean([t['priority'] for t in schedule['scheduled_trains']]) if schedule['scheduled_trains'] else 0
+        throughput_rate = len(scheduled) / len(trains) * 100 if trains else 0.0
+        avg_priority = float(np.mean([t['priority'] for t in scheduled])) if scheduled else 0.0
+
+        return {
+            'status': LpStatus[self.problem.status],
+            'objective_value': value(self.problem.objective),
+            'scheduled_trains': scheduled,
+            'unscheduled_trains': unscheduled,
+            'throughput_metrics': {
+                'total_trains_scheduled': len(scheduled),
+                'total_trains': len(trains),
+                'throughput_rate': round(throughput_rate, 2),
+                'average_priority_served': round(avg_priority, 2)
+            }
         }
 
-        return schedule
-
-    def optimize_with_conflicts(self, current_state, conflict_predictions):
+    def optimize_with_conflicts(
+        self, current_state: dict, conflict_predictions: list
+    ) -> dict:
         """
-        Optimize considering predicted conflicts
+        Produce recommendations to minimize predicted conflicts.
 
         Args:
-            current_state: current operational state
-            conflict_predictions: list of predicted conflicts with probabilities
+            current_state: current operational state dict.
+            conflict_predictions: list of prediction dicts.
 
         Returns:
-            optimized plan to minimize conflicts
+            Dict with recommendations and high-risk count.
         """
+        high_risk = [c for c in conflict_predictions if c.get('conflict_probability', 0) > 0.7]
         recommendations = []
 
-        # Analyze high-risk conflicts
-        high_risk_conflicts = [c for c in conflict_predictions if c['conflict_probability'] > 0.7]
-
-        for conflict in high_risk_conflicts:
-            # Generate specific recommendations
-            if conflict['input_features']['trains_in_section'] > 30:
+        for conflict in high_risk:
+            features = conflict.get('input_features', {})
+            if features.get('trains_in_section', 0) > 30:
                 recommendations.append({
                     'action': 'REDUCE_SECTION_DENSITY',
-                    'target': 'trains_in_section',
-                    'current_value': conflict['input_features']['trains_in_section'],
+                    'current_value': features['trains_in_section'],
                     'target_value': 25,
                     'expected_impact': 'Reduce conflict probability by 40-50%'
                 })
-
-            if conflict['input_features']['available_platforms'] < 3:
+            if features.get('available_platforms', 99) < 3:
                 recommendations.append({
                     'action': 'INCREASE_PLATFORM_AVAILABILITY',
-                    'target': 'available_platforms',
-                    'current_value': conflict['input_features']['available_platforms'],
+                    'current_value': features['available_platforms'],
                     'target_value': 4,
                     'expected_impact': 'Reduce conflict probability by 30-40%'
                 })
 
         return {
-            'high_risk_count': len(high_risk_conflicts),
+            'high_risk_count': len(high_risk),
             'recommendations': recommendations,
             'optimization_objective': 'Minimize conflict probability while maximizing throughput'
         }
 
 
-if __name__ == "__main__":
-    # Example usage
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
     optimizer = ThroughputOptimizer()
 
-    # Sample trains
     trains = [
-        {'id': 'T001', 'priority': 10, 'arrival_time': 0, 'duration': 8},
-        {'id': 'T002', 'priority': 8, 'arrival_time': 5, 'duration': 6},
-        {'id': 'T003', 'priority': 9, 'arrival_time': 10, 'duration': 7},
-        {'id': 'T004', 'priority': 7, 'arrival_time': 15, 'duration': 5},
+        {'id': 'T001', 'priority': 10, 'arrival_time': 0,  'duration': 8},
+        {'id': 'T002', 'priority':  8, 'arrival_time': 5,  'duration': 6},
+        {'id': 'T003', 'priority':  9, 'arrival_time': 10, 'duration': 7},
+        {'id': 'T004', 'priority':  7, 'arrival_time': 15, 'duration': 5},
         {'id': 'T005', 'priority': 10, 'arrival_time': 20, 'duration': 9},
     ]
-
-    result = optimizer.optimize_train_schedule(
-        trains=trains,
-        platforms=3,
-        section_capacity=25,
-        time_horizon=60
-    )
-
-    print("Optimization Result:")
+    result = optimizer.optimize_train_schedule(trains, platforms=3, section_capacity=25, time_horizon=60)
     print(json.dumps(result, indent=2))
