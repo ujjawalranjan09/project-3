@@ -1,0 +1,63 @@
+name: Railway Traffic Control System CI
+
+on:
+  push:
+    branches: [ main, fix/railway-system-errors ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./railway-traffic-control-system
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install requests
+
+    - name: Start API Server
+      run: |
+        echo "API_KEY=ci-test-key" > .env
+        echo "SECRET_KEY=ci-secret-key" >> .env
+        echo "FLASK_PORT=5000" >> .env
+        echo "FLASK_HOST=0.0.0.0" >> .env
+
+        python backend/flask_app.py > flask_output.log 2>&1 &
+
+        max_attempts=30
+        attempt=0
+        until $(curl -s http://localhost:5000/api/health > /dev/null) || [ $attempt -eq $max_attempts ]; do
+          echo "Waiting for server to start... ($attempt/$max_attempts)"
+          sleep 1
+          ((attempt++))
+        done
+
+        if [ $attempt -eq $max_attempts ]; then
+          echo "Server failed to start in time"
+          cat flask_output.log
+          exit 1
+        fi
+        echo "Server is up!"
+
+    - name: Run API Tests
+      run: |
+        sed -i 's/HEADERS = {.*}/HEADERS = {"X-API-Key": "ci-test-key"}/' test_api.py
+        python test_api.py
+
+    - name: Cleanup
+      if: always()
+      run: |
+        pkill -f "python backend/flask_app.py" || true
