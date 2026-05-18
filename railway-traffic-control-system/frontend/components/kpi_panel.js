@@ -68,7 +68,7 @@ function setupConflictForm() {
         const formData = {
             trains_in_section: parseInt(document.getElementById('trainsInSection').value),
             available_platforms: parseInt(document.getElementById('availablePlatforms').value),
-            platform_utilization_pct: parseFloat(document.getElementById('platformUtil').value),
+            platform_utilization: parseFloat(document.getElementById('platformUtil').value),
             weather_severity: parseFloat(document.getElementById('weatherSeverity').value),
             rainfall_mm: parseFloat(document.getElementById('rainfall').value),
             fog_intensity: parseFloat(document.getElementById('fogIntensity').value),

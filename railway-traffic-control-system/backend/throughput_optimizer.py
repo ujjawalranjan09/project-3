@@ -56,31 +56,31 @@ class ThroughputOptimizer:
 
         prob = LpProblem('Railway_Throughput_Optimization', LpMaximize)
 
-        # Decision variables
-        x = {(i, t): LpVariable(f'x_{i}_{t}', cat='Binary')
-             for i in range(num_trains) for t in time_slots}
-        p = {(i, k): LpVariable(f'p_{i}_{k}', cat='Binary')
-             for i in range(num_trains) for k in range(platforms)}
+        # Decision variables: z[i, t, k] = 1 if train i starts at time t on platform k
+        z = {
+            (i, t, k): LpVariable(f'z_{i}_{t}_{k}', cat='Binary')
+            for i in range(num_trains)
+            for t in time_slots
+            for k in range(platforms)
+        }
 
         # Objective: maximise priority-weighted throughput
         prob += lpSum(
-            trains[i]['priority'] * x[i, t]
+            trains[i]['priority'] * z[i, t, k]
             for i in range(num_trains)
             for t in time_slots
+            for k in range(platforms)
         ), 'Total_Weighted_Throughput'
 
-        # Constraint 1: each train scheduled at most once
+        # Constraint 1: each train scheduled at most once (one start time, one platform)
         for i in range(num_trains):
-            prob += lpSum(x[i, t] for t in time_slots) <= 1, f'once_{i}'
+            prob += lpSum(
+                z[i, t, k]
+                for t in time_slots
+                for k in range(platforms)
+            ) <= 1, f'once_{i}'
 
-        # Constraint 2: platform assignment iff scheduled
-        for i in range(num_trains):
-            prob += (
-                lpSum(p[i, k] for k in range(platforms))
-                == lpSum(x[i, t] for t in time_slots)
-            ), f'platform_assign_{i}'
-
-        # Pre-compute occupancy windows to avoid triple nested loop inside solver
+        # Pre-compute occupancy windows
         # occupancy[i][t] = list of start slots at which train i occupies slot t
         occupancy = {}
         for i in range(num_trains):
@@ -90,33 +90,35 @@ class ThroughputOptimizer:
                 starts = [s for s in range(max(0, t - dur + 1), t + 1) if s in set(time_slots)]
                 occupancy[i][t] = starts
 
-        # Constraint 3: one train per platform per slot
+        # Constraint 2: one train per platform per slot
         for k in range(platforms):
             for t in time_slots:
                 terms = [
-                    x[i, s] * p[i, k]   # NOTE: bilinear — valid for MILP via CBC
+                    z[i, s, k]
                     for i in range(num_trains)
                     for s in occupancy[i][t]
                 ]
                 if terms:
                     prob += lpSum(terms) <= 1, f'plat_{k}_{t}'
 
-        # Constraint 4: section capacity
+        # Constraint 3: section capacity
         for t in time_slots:
             terms = [
-                x[i, s]
+                z[i, s, k]
                 for i in range(num_trains)
                 for s in occupancy[i][t]
+                for k in range(platforms)
             ]
             if terms:
                 prob += lpSum(terms) <= section_capacity, f'cap_{t}'
 
-        # Constraint 5: respect earliest arrival times
+        # Constraint 4: respect earliest arrival times
         for i in range(num_trains):
             earliest = trains[i]['arrival_time']
             for t in time_slots:
                 if t < earliest:
-                    prob += x[i, t] == 0, f'arrival_{i}_{t}'
+                    for k in range(platforms):
+                        prob += z[i, t, k] == 0, f'arrival_{i}_{t}_{k}'
 
         solver = PULP_CBC_CMD(msg=0)
         prob.solve(solver)
@@ -127,10 +129,10 @@ class ThroughputOptimizer:
             LpStatus[prob.status], value(prob.objective) or 0
         )
 
-        return self._extract_solution(x, p, trains, time_slots, platforms)
+        return self._extract_solution(z, trains, time_slots, platforms)
 
     def _extract_solution(
-        self, x: dict, p: dict, trains: list, time_slots: list, platforms: int
+        self, z: dict, trains: list, time_slots: list, platforms: int
     ) -> dict:
         """Extract and format the LP solution."""
         scheduled, unscheduled = [], []
@@ -138,20 +140,19 @@ class ThroughputOptimizer:
         for i, train in enumerate(trains):
             placed = False
             for t in time_slots:
-                if value(x[i, t]) and round(value(x[i, t])) == 1:
-                    platform = next(
-                        (k for k in range(platforms) if value(p[i, k]) and round(value(p[i, k])) == 1),
-                        None
-                    )
-                    scheduled.append({
-                        'train_id': train['id'],
-                        'priority': train['priority'],
-                        'scheduled_time': t,
-                        'duration': train['duration'],
-                        'platform': platform,
-                        'original_arrival': train['arrival_time']
-                    })
-                    placed = True
+                for k in range(platforms):
+                    if value(z[i, t, k]) and round(value(z[i, t, k])) == 1:
+                        scheduled.append({
+                            'train_id': train['id'],
+                            'priority': train['priority'],
+                            'scheduled_time': t,
+                            'duration': train['duration'],
+                            'platform': k,
+                            'original_arrival': train['arrival_time']
+                        })
+                        placed = True
+                        break
+                if placed:
                     break
             if not placed:
                 unscheduled.append({

@@ -9,6 +9,7 @@ import json
 import sys
 
 API_BASE_URL = 'http://localhost:5000/api'
+HEADERS = {'X-API-Key': 'test-api-key'}
 
 def print_header(text):
     print("\n" + "="*60)
@@ -40,7 +41,7 @@ def test_conflict_detection():
     }
 
     try:
-        response = requests.post(f'{API_BASE_URL}/predict/conflict', json=data)
+        response = requests.post(f'{API_BASE_URL}/predict/conflict', json=data, headers=HEADERS)
         print(f"Status: {response.status_code}")
         result = response.json()
         print(f"Conflict Probability: {result.get('conflict_probability', 'N/A')}")
@@ -64,7 +65,7 @@ def test_delay_prediction():
     }
 
     try:
-        response = requests.post(f'{API_BASE_URL}/predict/delay', json=data)
+        response = requests.post(f'{API_BASE_URL}/predict/delay', json=data, headers=HEADERS)
         print(f"Status: {response.status_code}")
         result = response.json()
         print(f"Predicted Delay: {result.get('predicted_delay_minutes', 'N/A')} minutes")
@@ -94,7 +95,7 @@ def test_simulation():
     }
 
     try:
-        response = requests.post(f'{API_BASE_URL}/simulate', json=data)
+        response = requests.post(f'{API_BASE_URL}/simulate', json=data, headers=HEADERS)
         print(f"Status: {response.status_code}")
         result = response.json()
         print(f"Delay Reduction: {result.get('delay_reduction_minutes', 'N/A')} minutes")

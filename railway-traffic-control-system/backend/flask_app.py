@@ -46,9 +46,9 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-me-in-production')
 
-# CORS — locked to configured origins
-allowed_origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(',')
-CORS(app, origins=[o.strip() for o in allowed_origins])
+# CORS configuration
+ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', 'http://localhost:8000,http://127.0.0.1:8000').split(',')
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}})
 
 # Rate limiting
 limiter = Limiter(
@@ -538,6 +538,15 @@ def get_kpi_metrics():
             'conflict_predictions': len(conflict_preds),
             'delay_predictions': len(delay_preds)
         },
+        'throughput': {
+            'trains_per_hour': 42,
+            'percentage': 84.0
+        },
+        'average_delay': {
+            'current': round(avg_delay, 2),
+            'target': 5.0,
+            'unit': 'minutes'
+        },
         'punctuality': {
             'on_time_percentage': round(on_time_pct, 2),
             'target': 90.0
@@ -548,11 +557,6 @@ def get_kpi_metrics():
             'pending': daily_detected - daily_resolved,
             'avg_probability': round(avg_conflict_prob, 4),
             'high_risk_percentage': round(high_risk_pct, 2)
-        },
-        'average_delay': {
-            'current': round(avg_delay, 2),
-            'target': 5.0,
-            'unit': 'minutes'
         }
     })
 
